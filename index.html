@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Supply</title>
+<style>
+  :root { font-family: system-ui, sans-serif; }
+  body   { background:#f5f6fa; margin:0; padding:1rem; }
+  h1     { margin-top:0; }
+  .card  { background:#fff; border-radius:12px; padding:1rem 1.5rem;
+           box-shadow:0 2px 6px rgba(0,0,0,.08); margin-bottom:1.5rem; position:relative; }
+  label  { display:block; margin:.5rem 0 .25rem; font-size:.9rem; }
+  select, input[type=text], input[type=number], input[type=email] {
+    width:95%; padding:.5rem .75rem; border:1px solid #d1d5db; border-radius:6px; font-size:1rem;
+  }
+  button { margin-top:1rem; padding:.5rem 1rem; border:none; border-radius:6px;
+           background:#2563eb; color:#fff; cursor:pointer; }
+  button[disabled] { background:#9ca3af; cursor:default; }
+  button:hover:not([disabled]) { background:#1d4ed8; }
+  .flex  { display:flex; gap:1rem; align-items:flex-end; }
+  .rowMsg{ font-size:.8rem; color:#dc2626; margin-top:.25rem; min-height:1.2em; }
+  .status{ margin-top:.5rem; font-size:.9rem; }
+  #totalBar{ margin-top:.8rem; font-size:1.1rem; font-weight:600; }
+</style>
+</head>
+<body>
+<h1>Pasūtījumu-Noliktavas modulis</h1>
+
+<!-- produkta izveide -->
+<div class="card">
+  <h2>Pievienot produktu</h2>
+  <form id="productForm">
+    <label>Nosaukums</label>
+    <input type="text" name="Product_Name" required>
+    <label>Daudzums noliktavā</label>
+    <input type="number" name="Storage_Amount" min="0" required>
+    <label>Cena (€)</label>
+    <input type="number" name="Product_Price" step="0.01" required>
+    <button>Saglabāt</button>
+    <div class="status" id="prodMsg"></div>
+  </form>
+</div>
+
+<!-- pasutijuma pieteiksana -->
+<div class="card" id="orderCard">
+  <h2>Jauns pasūtījums</h2>
+
+  <form id="orderForm">
+    <label>Klienta vārds</label>
+    <input type="text" name="Customer_Name" required>
+    <label>E-pasts</label>
+    <input type="email" name="Customer_Email" required>
+
+    <h3>Preces</h3>
+    <div id="items"></div>
+    <button type="button" id="addItem">+ Rinda</button>
+
+    <div id="totalBar">Kopā: €0.00</div>
+
+    <button type="submit" id="submitBtn" disabled>Nosūtīt pasūtījumu</button>
+    <div class="status" id="orderMsg"></div>
+  </form>
+</div>
+
+<script>
+const API = "http://localhost:8000";
+let products = [];            // [{Product_ID, Product_Name, Storage_Amount, Product_Price}, …]
+const qs  = s=>document.querySelector(s);
+const qsa = s=>[...document.querySelectorAll(s)];
+
+/* produktu saraksts */
+async function loadProducts(){
+  const r = await fetch(API+'/products/');
+  products = r.ok ? await r.json() : [];
+  qsa('.pname').forEach(sel=>{
+    const keep = sel.value;
+    sel.innerHTML = optionList();
+    sel.value = keep;
+  });
+  validateAllRows();
+}
+const optionList = () => `<option value="" disabled selected>— izvēlies —</option>` +
+  products.map(p=>`<option value="${p.Product_ID}">${p.Product_Name}</option>`).join('');
+loadProducts();
+
+/* produkta pievienosana */
+qs('#productForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const f = e.target, msg = qs('#prodMsg');
+  const payload = {
+    Product_Name:f.Product_Name.value,
+    Storage_Amount:+f.Storage_Amount.value,
+    Product_Price:+f.Product_Price.value
+  };
+  const r = await fetch(API+'/products/', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  msg.textContent = r.ok ? 'Saglabāts!' : (await r.json()).detail;
+  msg.style.color  = r.ok ? 'green' : 'red';
+  if(r.ok){ f.reset(); await loadProducts(); }
+});
+
+/* pasutijuma rindas */
+function addItemRow(){
+  const row = document.createElement('div');
+  row.className='flex';
+  row.innerHTML = `
+    <div style="flex:2">
+      <label>Produkts</label>
+      <select class="pname" required>${optionList()}</select>
+    </div>
+    <div style="flex:1">
+      <label>ID</label>
+      <input type="number" class="pid" min="1" required>
+    </div>
+    <div style="flex:1">
+      <label>Daudzums</label>
+      <input type="number" class="qty" min="1" required>
+    </div>
+    <div style="flex:1">
+      <span class="rowMsg"></span>
+    </div>`;
+  qs('#items').appendChild(row);
+
+  const sel = row.querySelector('.pname');
+  const pid = row.querySelector('.pid');
+  const qty = row.querySelector('.qty');
+
+  sel.onchange = ()=>{ pid.value = sel.value; validateRow(row); validateAllRows(); };
+  pid.oninput  = ()=>{ const p = products.find(x=>x.Product_ID==pid.value); sel.value = p? p.Product_ID:''; validateRow(row); validateAllRows(); };
+  qty.oninput  = ()=>{ validateRow(row); validateAllRows(); };
+
+  validateRow(row);
+  validateAllRows();
+}
+addItemRow();
+qs('#addItem').onclick = addItemRow;
+
+/* rindas validacija + datu atributi */
+function validateRow(row){
+  const pidVal = row.querySelector('.pid').value;
+  const qtyVal = +row.querySelector('.qty').value;
+  const msg    = row.querySelector('.rowMsg');
+  const prod   = products.find(p=>p.Product_ID==pidVal);
+
+  if(!pidVal){ row.dataset.valid='false'; msg.textContent=''; return; }
+  if(!prod){   row.dataset.valid='false'; msg.textContent='Preces ID nav atrasts'; return; }
+
+  row.querySelector('.qty').max = prod.Storage_Amount;
+  if(qtyVal>prod.Storage_Amount){
+    row.dataset.valid='false';
+    msg.textContent=`Nepietiekams preces atlikums noliktavā (Maks. ${prod.Storage_Amount})`;
+    return;
+  }
+  row.dataset.valid='true';
+  msg.textContent='';
+}
+
+/* kopsumma & pasutijuma submit poga */
+function validateAllRows(){
+  const rows = qsa('#items .flex');
+  const allOK = rows.length && rows.every(r=>r.dataset.valid==='true');
+  qs('#submitBtn').disabled = !allOK;
+
+  let total=0;
+  rows.forEach(r=>{
+    if(r.dataset.valid==='true'){
+      const id  = +r.querySelector('.pid').value;
+      const qty = +r.querySelector('.qty').value;
+      const prod= products.find(p=>p.Product_ID==id);
+      if(prod) total += prod.Product_Price * qty;
+    }
+  });
+  qs('#totalBar').textContent = `Kopā: €${total.toFixed(2)}`;
+}
+
+/* pasutijuma forma */
+qs('#orderForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const f = e.target, rows=qsa('#items .flex'), msg=qs('#orderMsg');
+  const items = rows.map(r=>({Product_ID:+r.querySelector('.pid').value, Product_Amount:+r.querySelector('.qty').value}));
+  const payload = {Customer_Name:f.Customer_Name.value, Customer_Email:f.Customer_Email.value, items};
+  const r = await fetch(API+'/orders/', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  if(r.ok){
+    const d = await r.json();
+    msg.textContent = `Pasūtījums #${d.Order_ID} pieņemts! (€${d.Order_Total.toFixed(2)})`;
+    msg.style.color='green';
+    f.reset(); qs('#items').innerHTML=''; addItemRow(); await loadProducts();
+  }else{ msg.textContent=(await r.json()).detail; msg.style.color='red'; }
+});
+</script>
+</body>
+</html>
