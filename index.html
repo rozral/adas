@@ -94,9 +94,16 @@ qs('#productForm').addEventListener('submit', async e=>{
     Product_Price:+f.Product_Price.value
   };
   const r = await fetch(API+'/products/', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-  msg.textContent = r.ok ? 'Saglabāts!' : (await r.json()).detail;
-  msg.style.color  = r.ok ? 'green' : 'red';
-  if(r.ok){ f.reset(); await loadProducts(); }
+  if(r.ok){
+    const data=await r.json();
+    msg.textContent=`Saglabāts! ID: ${data.Product_ID}`;
+    msg.style.color='green';
+    f.reset();
+    await loadProducts();
+  }else{
+    msg.textContent=(await r.json()).detail;
+    msg.style.color='red';
+ }
 });
 
 /* pasutijuma rindas */
